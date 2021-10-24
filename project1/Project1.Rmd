@@ -1,0 +1,353 @@
+---
+title: "CITS4409 Project 1 "
+output: html_notebook
+author: 'WEI YANG 2122020'
+---
+<style type="text/css">
+	#header {
+	    text-align: center;
+	}
+</style>
+
+<p style="font-family: times, serif; font-size:18pt">
+    Introduction
+</p>
+
+The data set analyzed can be obtained from the Kaggle platform. This dataset was collected to work on NBA games data. I used the nba stats website to create this dataset. https://www.kaggle.com/nathanlauga/nba-games
+
+The National Basketball Association (NBA) is an American men's professional basketball league. It is composed of 30 teams and is one of the four major professional sports leagues in the United States and Canada. It is the premier men's professional basketball league in the world.
+<br><br>
+<p style="font-family: times, serif; font-size:18pt">
+    Data loading, overview and set up
+</p>
+
+<p style="font-family: times, serif; font-size:14pt">
+   Load libraries
+</p>
+```{r}
+library(ggthemes)
+library(grid)
+library(ggplot2)
+library(dplyr)
+library(reshape2)
+library(gridExtra)
+```
+<br><br>
+<p style="font-family: times, serif; font-size:14pt">
+Setting up a plotting theme
+</p>
+```{r}
+cits4009_theme <- theme(plot.title = element_text(color = "darkred"),
+                        axis.text.y=element_text(size=8),
+                        axis.title = element_text(color='black', vjust=0.1),legend.key.size=unit(.2,"inches"))
+```
+<br><br>
+<p style="font-family: times, serif; font-size:14pt">
+Load the main data
+</p>
+```{r}
+nba<- read.csv("games_details.csv")
+```
+<br><br>
+<p style="font-family: times, serif; font-size:14pt">
+Using str to analyze the data
+</p>
+```{r}
+str(nba)
+```
+There are 576782 obs with 28 variables, comprised by 6 factors, 2 integer and 19 numeric variables. As we can see, on court time(MIN) is chr. Because we may use it for calculation, we will transform it into num later on. There are only 3 types of Position and substitutes do not have Position. We will make the positon into 6 different types.<br><br>
+
+<p style="font-family: times, serif; font-size:14pt">
+Using summary to analyze the data
+</p>
+```{r}
+summary(nba)
+```
+<br><br>
+<p style="font-family: times, serif; font-size:14pt">
+Viewing the first six observations
+</p>
+```{r}
+head(nba)
+```
+<br><br>
+<p style="font-family: times, serif; font-size:14pt">
+Show range of game_ID
+</p>
+```{r}
+hist(nba$GAME_ID)
+```
+It can been seen that there are 3 types of games which are preseason,regular season and playoff. We only focus on regular season games. 
+<br><br><br>
+<p style="font-family: times, serif; font-size:14pt">
+Remove gameID start from 1 which are preseason 
+</p>
+```{r}
+nba<- nba[which(nba$GAME_ID>"20000000"&nba$GAME_ID<"40000000"),]
+```
+<br><br>
+<p style="font-family: times, serif; font-size:14pt">
+Add column of years of games
+</p>
+```{r}
+year<-function(a){#write a function to generate year from GAMEID
+    a1<-"20"
+    a2<-substring(a,2,3)
+    paste(a1,a2,sep="")
+}
+nba<-mutate(nba,year=year(GAME_ID))
+nba<-nba[which(nba$year>"2006"),]
+```
+<br><br>
+<p style="font-family: times, serif; font-size:14pt">
+Convert mins to a int inorder to do calculation later on
+</p>
+```{r}
+Min<-function(a){#write a function to transform a string of time into a num
+b<- strsplit(a,split = ":")
+b<-unlist(b)
+min<- as.numeric(b[1])
+sec <- as.numeric(b[2])
+result<- round((min+sec/60),1)
+}
+i=1
+while(i<=length(nba)){
+  nba$MIN[i]<- Min(nba$MIN[i])
+  i=i+1
+}
+```
+<br><br>
+<p style="font-family: times, serif; font-size:14pt">
+Analyze the number of NA each variables
+</p>
+```{r}
+apply(is.na(nba), 2, sum)
+nba <- na.omit(nba)
+```
+<br><br>
+<p style="font-family: times, serif; font-size:14pt">
+calculate TS
+</p>
+```{r}
+nba<-mutate(nba,TS=round(PTS/(2*(FGA+0.44*FTA)),3))
+nba$TS <- ifelse(is.na(nba$TS),0,nba$TS)
+```
+Based on the above observations, we’ll convert some columns to a more appropriate format and add new ones that might be useful in further analysis.
+```{r}
+nba[which(nba$START_POSITION !=""),7]<-c("SF","PF","C","SG","PG")#transform 3 position into 6 
+nba[which(nba$START_POSITION ==""),7]<-"SUB"
+nba <- within(nba, {
+          START_POSITION <- as.factor(START_POSITION)
+})
+
+```
+<p style="font-family: times, serif; font-size:18pt">
+    Anylise the trend of scoring
+</p>
+
+Generate data for analysing 
+```{r}
+games<-aggregate(nba[,c(10,11,13,14,16,17,19:27)],by=list(gameID=nba$GAME_ID),FUN=sum)
+games<-mutate(games,year=year(gameID))
+team<-aggregate(games[,2:16],by=list(year=games$year),FUN=mean)#transform data
+```
+First let us have a look at the distribution of score in a games
+```{r}
+ggplot(data = games, mapping = aes(x =PTS ))+ labs(  title = "Distribution of score in a game")+geom_histogram(binwidth=5)+cits4009_theme #plot the histogram of PTS.
+```  
+<br>
+plot the trend of average points in a game
+```{r}
+ggplot(data=team, mapping=aes(x=year, y=PTS)) +geom_bar(stat='identity',colour = "red", fill = 'steelblue')+labs(  title = "Trend of Average Score by years",x = "Year",y = "Averagere score per game")+ geom_text(mapping = aes(label = round(PTS,1)),vjust=-0.25)+cits4009_theme
+```
+It can be seen from the chart, there was a steady increase in average score from 2011 to 2019. So the data will be transferred to mainly analyze scoring during that period.
+Plot the trend again from 2011-2019
+Calculate games with less than 220 and more than 220
+Generate data for analysing 
+```{r}
+team<-team[which(team$year>"2010"),]
+myarrow=arrow(angle = 15, type = "closed")
+ggplot(data=team, mapping=aes(x=year, y=PTS, group=1))+  geom_line(colour = "red",arrow=myarrow,size=1,linetype=1)+geom_point() +geom_bar( alpha=0.7,stat='identity', fill = 'steelblue')+labs(  title = "Trend of Average Score by years",x = "Year",y = "Averagere score per game")+geom_text(mapping = aes(label = round(PTS,1)),vjust=-0.25)+cits4009_theme
+
+
+more<-function(a){ #function turns  numerical into catagorical 
+   ifelse(a>=210,"210 more","210 less")
+}
+games<-mutate(games,profomance=more(games$PTS))
+games<- games[which(games$year>"2010"),]
+ggplot(games) +geom_bar(aes(x=year, fill=profomance),position="dodge")+labs(title = "Number of games more than 210pts")+cits4009_theme+annotate("text", x = "2016", y = 750,label = "First year with\n more game >210") 
+```
+
+Then I will explore the reason of increase in score.
+There are 4 figures infect the final score. They are Field goal percentage(FT_PCT,FG3_PCT,FT_PCT),the pace of game and the turnover rate. First I will calculate these 4 data.
+
+Firstly, let us analyze Field goal percentage wihich inculding Total Field goal percentage,3-points Field goal percentage and penalty Field goal percentage.
+
+```{r}
+games<-mutate(games,FG_PCT=games$FGM/FGA)
+games<-mutate(games,FG3_PCT=FG3M/FG3A)
+games<-mutate(games,FT_PCT=FTM/FTA)
+
+ggplot(data = games, mapping = aes(x = year, y = FG_PCT)) +geom_boxplot()+labs(  title = "Box plot of Total Field goal percentage ",x = "Year",y = "Field goal percentage")+cits4009_theme +coord_flip()
+
+ggplot(data = games, mapping = aes(x = year, y = FG3_PCT)) +geom_boxplot()+labs(  title = "Box plot of 3-points Field goal percentage ",x = "Year",y = "Field goal percentage")+cits4009_theme+coord_flip()
+
+
+ggplot(data = games, mapping = aes(x = year, y = FT_PCT)) +geom_boxplot()+labs(  title = "Box plot of penalty Field goal percentage ",x = "Year",y = "Field goal percentage")+cits4009_theme+coord_flip()
+```
+As is shown in the box plot, tough the field goal percentage of the three type of Scoring means have some fluctuattions during the 13 years, there is no significant trend of increasing. It can not explain the increase of  points of games year by year. I will check the change of pace of games.
+Fast pace means more shots teams can made in a game.
+```{r}
+games<-mutate(games,FG2A=games$FGA-games$FG3A)
+team1<-aggregate(games[,c(2:16,22)],by=list(year=games$year),FUN=mean)
+team1<-reshape2::melt(data=team1,id.vars=c('year'),measure.vars = c('FGA','FG3A','FTA','FG2A'),variable.names= 'FG',value.name='FGA')
+
+ggplot(data=team1, mapping=aes(x=year, y=FGA,colour=variable, group=variable))+  geom_line(size=1,linetype=1)+geom_point() +labs(  title = "Attempt of different type of offense",x = "Year",y = "Number of shooting attempt")+cits4009_theme+annotate("text", x = "2017", y = 120,label = "2-point drop") +annotate("text", x = "2017", y = 70,label = "3-point rise") 
+```
+According to the line chart, the total shooting attempts increase steadily
+which contribute to the increase of total score. Besides, a more interesting phenomenon has been found. The composition of shots changes significantly,with more and more 3 point shoot was made. As we know from the previous analysis, the total percentage of field goal keep unchange and more 3 point shots were made. It also contributes to the increase of score. In order to show this more clearly, a new index is calculate which is called True Percentage(TS).In basketball, true shooting percentage is an advanced statistic that measures a player's efficiency at shooting the ball. It is intended to more accurately calculate a player's shooting than field goal percentage, free throw percentage, and three-point field goal percentage taken individually. 
+
+Let us present the relationship between 3 point shots and TS.
+```{r}
+games1<-mutate(games,TS=round(PTS/(2*(FGA+0.44*FTA)),3))
+
+ggplot(data = games1,mapping = aes(x = FG3A, y = TS)) +geom_hex(bins=15)+ geom_smooth(colour='red')+labs(  title = "Hexbin and smooth of TS vs FG3A")+cits4009_theme+annotate("text", x = 70, y = 0.55,colour='white',
+label = "Increasing rate decrease") 
+
+```
+It is obvious that the more 3 point shots a team makes, the higher TS it is likely to get.
+```{r}
+games<-mutate(games,TS=round(PTS/(2*(FGA+0.44*FTA)),3))
+p1<-ggplot(data = games[which(games$year==2011|games$year==2019),], mapping = aes(x = year, y = PTS)) +geom_violin()+labs(  title = "Violin plot of PTS ",x = "Year",y = "PTS")+cits4009_theme
+
+p2<-ggplot(data = games[which(games$year==2011|games$year==2019),], mapping = aes(x = year, y = TS)) +geom_violin()+labs(  title = "Violin plot of TS ",x = "Year",y = "TS")+cits4009_theme
+grid.arrange(p1, p2, ncol=2)
+```
+<p style="font-family: times, serif; font-size:14pt">
+Conclusion
+</p>
+```{r}
+team2<-mutate(team,TS=round(PTS/(2*(FGA+0.44*FTA)),3))
+
+p1<-ggplot(data=team2, mapping=aes(x=year, y=PTS, group=1))+  geom_line(colour = "red",size=2,linetype=1)+geom_point() +labs(  title = "Trend of score",x = "Year",y = "points")+cits4009_theme
+
+p2<-ggplot(data=team2, mapping=aes(x=year, y=TS, group=1))+  geom_line(colour = "green",size=2,linetype=1)+geom_point() +labs(  title = "True Percentage ",x = "Year",y = "TS")+cits4009_theme
+
+p3<-ggplot(data=team2, mapping=aes(x=year, y=FGA, group=1))+  geom_line(colour = "blue",size=2,linetype=1)+geom_point() +labs(  title = "Number of shooting attempt",x = "Year",y = "shots")+cits4009_theme
+grid.arrange(p1, p2,p3, ncol=1)
+
+```
+In conclusion, the score of a game show an upward trend during the 
+last 10 years. It is mainly due to the faster pace of games and the higher Ture percentage of shooting and the higher TS is as a result of more three-point attempts in modern basketball.
+
+<br><br>
+<p style="font-family: times, serif; font-size:18pt">
+    Analyze the impact of basketball trends on teams
+</p>
+
+After finishing first step of analysis, a question has generated. Does every team increase their 3 point shots and the pace of the games, or it is only leaded by particular teams? Which team or teams lead the change?
+
+First we need to transfrom the data
+```{r}
+nba<-nba[which(nba$year>"2010"),]
+teams<-aggregate(nba[,c(10,11,13,14,16,17,19:28)],by=list(year=nba$year,team=nba$TEAM_ABBREVIATION,gameID=nba$GAME_ID),FUN=sum)
+teams<-aggregate(teams[,4:19],by=list(year=teams$year,team=teams$team),FUN=mean)
+teams<-mutate(teams,TS=round(PTS/(2*(FGA+0.44*FTA)),3))
+```
+Plot the trend of 3-point shooting for each team
+```{r}
+
+ggplot(data=teams, mapping=aes(x=year, y=FG3A,colour=team, group=team))+  geom_line(size=1)+geom_point() +labs( title = "3-point shooting by teams",x = "Year",y = "3-point shots")+cits4009_theme
+
+
+ggplot(data=teams,mapping=aes(x=year, fill=FG3A,y=team, group=team))+  geom_tile() +labs( title = "3-point shooting by teams",x = "Year",y = "teams")+theme(plot.title = element_text(color = "darkred"),axis.text.y=element_text(size=5) )
+
+```
+It can be seen from the chart, in 2011, all teams but one shoot no more than 25  3- point ball. In 2019, all teams shoot more than 27 and the most can reach nearly 45 per game.
+
+However,there are too many lines on the same graph which make the chart unclear to read. So top 3 teams and the last one in 3 point shooting in 2019 are selected.```
+They are HOU,DAL,MIN and IND.
+
+```{r}
+a<-teams[which(teams$year==2019),]
+a[order(-a$FG3A),]
+
+teams1<-teams[which(teams$team=="HOU"|teams$team=="DAL"|teams$team=="MIN"|teams$team=="IND"),]#transform data
+ggplot(data=teams1, mapping=aes(x=year, y=FG3A,colour=team, group=team))+  geom_line(size=1)+geom_point() +labs( title = "3-point shooting by teams",x = "Year",y = "3-point shots")+cits4009_theme+annotate("text", x = "2012", y = 30,
+label = "HOU Lead the trend") +annotate("text", x = "2016", y = 25,
+label = "All teams started to follow") 
+```
+
+HOU shoot only 20 3-point per game in 2011 and then increase dramatically year by year. It reach the peak in 2018 wich 45 per game.
+There was a big jump between 2011-2012 for HOU with others still at a low level. 
+
+So we can answer the question at the beginning of this topic. All teams show an upward trend in 3-point shooting during the last 8 years. This trend was initially lead by HOU between 2011-2012 and nearly all teams followed in the next few years sooner or later. And HOw keep the first in number of 3-point shooting for the last 6 years.
+
+Then I want to see Scoring characteristics of HOU
+```{r}
+HOU<-aggregate(nba[,c(10,11,13,14,16,17,19:28)],by=list(year=nba$year,team=nba$TEAM_ABBREVIATION,gameID=nba$GAME_ID),FUN=sum)
+HOU<-HOU[HOU$team=="HOU",]
+HOU_mean<-aggregate(HOU[,4:19],by=list(year=HOU$year,team=HOU$team),FUN=mean)
+HOU_mean<-mutate(HOU_mean,FG2M=HOU_mean$FGM-HOU_mean$FG3M)
+HOU_mean<-mutate(HOU_mean,FG2P=FG2M*2)
+HOU_mean<-mutate(HOU_mean,FG3P=FG3M*3)
+HOU_mean<-mutate(HOU_mean,FTP=FTM)
+HOU_mean<-mutate(HOU_mean,Total=FTP+FG3P+FG2P)
+HOU_long<-reshape2::melt(data=HOU_mean,id.vars=c('year','team'),measure.vars = c('FG3P','FTP','FG2P'),variable.names= 'FG',value.name='FGA')#transform data
+ggplot(data = HOU, mapping = aes(x = PTS,  y=..density..)) +
+  geom_histogram(binwidth=2) +
+  geom_density(colour = "blue", alpha=0.5 )+labs(  title = "Scoring Distribution for HOU ")+cits4009_theme
+
+ggplot( data = HOU_long,aes(x = year, y = FGA, fill = variable))+geom_bar(stat = "identity")+labs(  title = "Scoring method composition for HOU ",x = "Year",y = "POINTS")+cits4009_theme
+
+```
+
+Then I will analysis the relation between 3-point shooting vs total point for HOU
+
+```{r}
+ggplot(data = HOU,mapping = aes(x = FG3A, y = PTS)) +geom_point() +
+geom_smooth()+labs(  title = "3point vs Points for HOU ",x = "3-point",y = "POINTS")+cits4009_theme
+
+```
+It is generally that the more 3 point HOU Shoots, the higher score they are likely to get.
+
+<br><br>
+<p style="font-family: times, serif; font-size:18pt">
+    Analyze the impact of basketball trends on players
+</p>
+
+After analyzing the impact of basketball trends on teams,I also want to see the the impact of basketball trends on players. I will focus on the impact on players on different positions. As can be seen from the previous analysis the game become faster and more 3 point shots was made. 
+
+```{r}
+position<-aggregate(nba[,c(14,21,27,30)],by=list(START_POSITION=nba$START_POSITION,year=nba$year),FUN=mean)#transform data
+p <- ggplot(data = position,  mapping = aes(
+  x = FG3A, y = REB,
+  color = START_POSITION))
+p + geom_jitter(width=0.05, height=0.05)+labs(  title = "3point and rebounds for different position",x = "3-point",y = "Rebound")+cits4009_theme+annotate("text", x = 2.5, y = 8,label = "C and PF shoot more 3 Point") 
+```
+
+It is expected that guard with shorter height and better shooting skills may perform better than before. On the other hand Center with low speed and lack of shooting skill will be less dominant on the court.Let's see if this is the case.
+
+
+```{r}
+position<-aggregate(nba[,c(14,21,27,30)],by=list(START_POSITION=nba$START_POSITION,year=nba$year),FUN=mean)
+
+ps11<- position[which(position$year==2011),]#transform data 
+ps19<- position[which(position$year==2019),]
+myLabel = as.vector(ps11$START_POSITION)   
+myLabel = paste(myLabel, "(", round(ps11$PTS / sum(ps11$PTS) * 100, 1), "%)", sep = "") 
+myLabel19 = as.vector(ps19$START_POSITION)   
+myLabel19 = paste(myLabel19, "(", round(ps19$PTS / sum(ps19$PTS) * 100, 1),"%)", sep = "")
+
+p1<-ggplot(ps11, aes(x = "", y = PTS, fill = START_POSITION)) + geom_bar(stat = "identity") + coord_polar(theta = "y")+ labs(x = "", y = "", title = "Score in 2011 by positions")+ theme(axis.ticks = element_blank()) + theme(legend.title = element_blank(), legend.position = "top") + scale_fill_discrete(breaks = ps11$START_POSITION, labels = myLabel) +theme(plot.title = element_text(color = "darkred"),
+                        axis.text.y=element_text(size=8),
+                        axis.title = element_text(color='black', vjust=0.1),legend.key.size=unit(.15,"inches"))
+
+p2<-ggplot(ps19, aes(x = "", y = PTS, fill = START_POSITION)) + geom_bar(stat = "identity") + coord_polar(theta = "y")+ labs(x = "", y = "", title = "Score in 2019 by positions")+ theme(axis.ticks = element_blank()) + theme(legend.title = element_blank(), legend.position = "top") + scale_fill_discrete(breaks = ps19$START_POSITION, labels = myLabel19) +theme(plot.title = element_text(color = "darkred"),
+                        axis.text.y=element_text(size=8),
+                        axis.title = element_text(color='black', vjust=0.1),legend.key.size=unit(.15,"inches"))
+grid.arrange(p1, p2, nrow=1)
+```
+It can be seen that the position of guard(both pg and sg) shows a increase in score from 19.9% and 18.6% to 20.4% and 20.1% respectively as expected.
+However, center keep uneven which is not as expected. The decrease of scoring was seen in position of SF and PF. 
+

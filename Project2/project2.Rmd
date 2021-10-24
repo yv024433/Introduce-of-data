@@ -1,0 +1,955 @@
+---
+title: "CITS4009 Project 2 "
+output: html_notebook
+author: 'WEI YANG 21220208'
+---
+<style type="text/css">
+	#header {
+	    text-align: center;
+	}
+</style>
+
+<p style="font-family: times, serif; font-size:18pt">
+    Introduction
+</p>
+
+The data set analyzed can be obtained from the Kaggle platform. This dataset was collected to work on NBA games data. I used the nba stats website to create this dataset. https://www.kaggle.com/nathanlauga/nba-games
+
+The National Basketball Association (NBA) is an American men's professional basketball league. It is composed of 30 teams and is one of the four major professional sports leagues in the United States and Canada. It is the premier men's professional basketball league in the world.
+
+In this project, 2 different model will be built to analyze the relationship between Technical Statistics and the final result of a game. This may help coach to adjust their strategy and help funs to predict a result before a match.
+
+Also the performance of top players during the last 20 years will be clustered. So that we can identify type of players to known them better.
+<br><br>
+<p style="font-family: times, serif; font-size:18pt">
+    Data loading, overview and set up
+</p>
+
+<p style="font-family: times, serif; font-size:14pt">
+   Load libraries
+</p>
+```{r}
+library(ggthemes)
+library(grid)
+library(ggplot2)
+library(dplyr)
+library(reshape2)
+library(gridExtra)
+library(rpart)
+library(rpart.plot)
+library(ROCR)
+library(grid)
+
+
+```
+<br><br>
+<p style="font-family: times, serif; font-size:14pt">
+Setting up a plotting theme
+</p>
+```{r}
+cits4009_theme <- theme(plot.title = element_text(color = "darkred"),
+                        axis.text.y=element_text(size=8),
+                        axis.title = element_text(color='black', vjust=0.1),legend.key.size=unit(.2,"inches"))
+```
+<br><br>
+<p style="font-family: times, serif; font-size:14pt">
+Load the main data
+</p>
+```{r}
+nba<- read.csv("games_details.csv")
+```
+<br><br>
+<p style="font-family: times, serif; font-size:14pt">
+Using str to analyze the data
+</p>
+```{r}
+str(nba)
+```
+There are 576782 obs with 28 variables, comprised by 6 factors, 2 integer and 19 numeric variables. As we can see, on court time(MIN) is chr. Because we may use it for calculation, we will transform it into num later on. There are only 3 types of Position and substitutes do not have Position. We will make the positon into 6 different types.<br><br>
+
+<p style="font-family: times, serif; font-size:14pt">
+Using summary to analyze the data
+</p>
+```{r}
+summary(nba)
+```
+<br><br>
+<p style="font-family: times, serif; font-size:14pt">
+Viewing the first six observations
+</p>
+```{r}
+head(nba)
+```
+<br><br>
+<p style="font-family: times, serif; font-size:14pt">
+Show range of game_ID
+</p>
+```{r}
+hist(nba$GAME_ID)
+```
+<p style="font-family: times, serif; font-size:18pt">
+    DATA Procsssing
+</p>
+It can been seen that there are 3 types of games which are preseason,regular season and playoff. We only focus on regular season games. 
+<br><br><br>
+<p style="font-family: times, serif; font-size:14pt">
+Remove gameID start from 1 which are preseason 
+</p>
+```{r}
+nba<- nba[which(nba$GAME_ID>"20000000"&nba$GAME_ID<"40000000"),]
+```
+<br><br>
+<p style="font-family: times, serif; font-size:14pt">
+Add column of years of games
+</p>
+```{r}
+year<-function(a){#write a function to generate year from GAMEID
+    a1<-"20"
+    a2<-substring(a,2,3)
+    paste(a1,a2,sep="")
+}
+nba<-mutate(nba,year=year(GAME_ID))
+```
+<br><br>
+<p style="font-family: times, serif; font-size:14pt">
+Analyze the number of NA each variables
+</p>
+```{r}
+apply(is.na(nba), 2, sum)
+nba <- na.omit(nba)
+```
+<br><br>
+<p style="font-family: times, serif; font-size:14pt">
+Generate data for analysing. For the project I want to analyze the relationship between games strategy and the game results. How to predict if a team will win or loss in a particular match.Then the data was changed to required format.
+</p>
+
+```{r}
+games1<-aggregate(nba[,c(10,11,13,14,16,17,19:27)],by=list(gameID=nba$GAME_ID),FUN=sum)
+games<-aggregate(nba[,c(10,11,13,14,16,17,19:27)],by=list(gameID=nba$GAME_ID,Team =nba$TEAM_ABBREVIATION),FUN=sum)
+games<-mutate(games,year=year(gameID))
+col<-setdiff(colnames(games),list('year','gameID','Team'))
+```
+
+<br><br>
+<p style="font-family: times, serif; font-size:14pt">
+The data of opponent in a particular match is generated. So, more parameter can be add to a particular match. So that we have more option to choose from.
+</p>
+
+```{r}
+
+total<-games
+for(i in c(1:length(games$gameID))){
+  vector<- games1[games1$gameID==games$gameID[i],]
+  total$PTS[i] <- vector$PTS
+  total$FGM[i]  <- vector$FGM
+  total$FGA[i] <- vector$FGA
+  total$FG3M[i] <- vector$FG3M
+  total$FG3A[i] <- vector$FG3A
+  total$FTM[i] <- vector$FTM
+  total$FTA[i] <- vector$FTA
+  total$OREB[i] <- vector$OREB
+  total$DREB [i] <- vector$DREB 
+  total$REB [i] <- vector$REB 
+  total$AST[i] <- vector$AST
+  total$STL[i] <- vector$STL
+  total$BLK[i] <- vector$BLK
+  total$TO[i] <- vector$TO
+  total$PF[i] <- vector$PF
+}
+
+```
+
+
+<br><br>
+<p style="font-family: times, serif; font-size:14pt">
+Add the target: game result in the data, later we will analize the relationship between the variables and the game results. 
+</p>
+
+```{r}
+difcol<-paste("Dif",col,sep='')
+games[difcol]<-2*games[col]-total[col]
+games<-mutate(games,TS=round(PTS/(2*(FGA+0.44*FTA)),3))
+games<-mutate(games,FG_PCT=round(FGM/FGA,3))
+games<-mutate(games,FG3_PCT=round(FG3M/FG3A,3))
+games<-mutate(games,FT_PCT=round(FTM/FTA,3))
+games$result <-ifelse(games$PTS>total$PTS/2,1,-1)
+
+```
+<p style="font-family: times, serif; font-size:18pt">
+    Classification
+</p>
+
+<br><br>
+<p style="font-family: times, serif; font-size:14pt">
+Firstly, I will conduct Single variable analysis. Separate the whole data set in two 3 part Train, Test and calibration. The outcome are set to be the result of a game and all other variables will be factors.
+</p>
+
+
+```{r}
+set.seed(729375)
+games$rgroup <- runif(dim(games)[[1]])
+TrainAll <- subset(games,rgroup<=0.9)
+Test <- subset(games,rgroup>0.9)
+outcome <- 'result'
+vars <- setdiff(colnames(TrainAll), c(outcome,'rgroup'))
+catVars <- vars[sapply(TrainAll[,vars],class) %in%c('factor','character')]
+numericVars <- vars[sapply(TrainAll[,vars],class) %in%c('numeric','integer')]
+pos <- '1'
+useForCal <- rbinom(n=dim(TrainAll)[[1]],size=1,prob=0.1)>0
+Cal <- subset(TrainAll,useForCal)
+Train <- subset(TrainAll,!useForCal)
+
+```
+<br><br>
+<p style="font-family: times, serif; font-size:14pt">
+This is the function to get the prediction from categorical variables.
+</p>
+
+```{r}
+mkPredC <- function(outCol,varCol,appCol) {
+pPos <- sum(outCol==pos)/length(outCol)
+naTab <- table(as.factor(outCol[is.na(varCol)]))
+pPosWna <- (naTab/sum(naTab))[pos]
+vTab <- table(as.factor(outCol),varCol)
+pPosWv <- (vTab[pos,]+1.0e-3*pPos)/(colSums(vTab)+1.0e-3)
+pred <- pPosWv[appCol]
+pred[is.na(appCol)] <- pPosWna
+pred[is.na(pred)] <- pPos
+pred
+}
+
+
+
+```
+
+
+<br><br>
+<p style="font-family: times, serif; font-size:14pt">
+predict the realation between outcome and each single variable and add the result at the end of the data.
+</p>
+
+```{r}
+for(v in catVars) {
+pi <- paste('pred',v,sep='')
+Train[,pi] <- mkPredC(Train[,outcome],
+Train[,v],Train[,v])
+Cal[,pi] <- mkPredC(Train[,outcome],
+Train[,v],Cal[,v])
+Test[,pi] <- mkPredC(Train[,outcome],
+Train[,v],Test[,v])
+}
+```
+<br><br>
+<p style="font-family: times, serif; font-size:14pt">
+Build a function to calculate the AUC of each single variables
+</p>
+
+```{r}
+library('ROCR')
+calcAUC <- function(predcol,outcol) {
+perf <- performance(prediction(predcol,outcol==pos),'auc')
+as.numeric(perf@y.values)
+}
+
+```
+<br><br>
+<p style="font-family: times, serif; font-size:14pt">
+Print out the AUC for each categorical variables of both training and calibration data set
+</p>
+```{r}
+for(v in catVars) {
+pi <- paste('pred',v,sep='')
+aucTrain <- calcAUC(Train[,pi],Train[,outcome])
+if(aucTrain>=0.5) {
+aucCal <- calcAUC(Cal[,pi],Cal[,outcome])
+print(sprintf(
+"%s, trainAUC: %4.3f calibrationAUC: %4.3f",
+pi, aucTrain, aucCal))
+}
+}
+
+```
+<br><br>
+<p style="font-family: times, serif; font-size:14pt">
+Bin the numeric feature into a number of ranges and then use the range labels as a new categorical variable.
+</p>
+
+```{r}
+mkPredN <- function(outCol,varCol,appCol) {
+cuts <- unique(as.numeric(
+quantile(varCol, probs=seq(0, 1, 0.1),na.rm=T)))
+varC <- cut(varCol,cuts)
+appC <- cut(appCol,cuts)
+mkPredC(outCol,varC,appC)
+}
+
+```
+<br><br>
+<p style="font-family: times, serif; font-size:14pt">
+Print out the AUc of training and calibration set for all numerical variables
+</p>
+
+```{r}
+for(v in numericVars) {
+pi<-paste('pred',v,sep='')
+Train[,pi]<-mkPredN(Train[,outcome],Train[,v],Train[,v])
+Test[,pi]<-mkPredN(Train[,outcome],Train[,v],Test[,v])
+Cal[,pi]<-mkPredN(Train[,outcome],Train[,v],Cal[,v])
+aucTrain<-calcAUC(Train[,pi],Train[,outcome])
+if(aucTrain>=0.55) {
+aucCal<-calcAUC(Cal[,pi],Cal[,outcome])
+print(sprintf(
+"%s, trainAUC: %4.3f calibrationAUC: %4.3f",
+pi,aucTrain,aucCal))
+}
+}
+
+```
+<br><br>
+<p style="font-family: times, serif; font-size:14pt">
+As we can see from the result most of the AUC for training set are a little bit higher than that of calibration set. But they are generally at the same level. SO most of the result is promising. However for particular result, the rate is really high which is approaching 1. It can be predicted for sure if we get this variables by hand. Then I found that some of the variables are highly related to the result. Like the difference of score in a game, it is to judge which team win the game, to some extent it is equal to the result, which is not suitable for prediction. There are some other variables are more or less related to the outcome but not a strategy of a game. So they are also remove from our data.
+<br>
+Furthermore, as analyized in project 1. The trend of a game during the last 20 years has been change a lot. The pace of games become quicker and the score of a game tend to be increased. After combine these factors, I transform some of the data which take consider the pace change of the time. So that the prediction can be more useful for making a strategy or perdict a morden game.
+
+Just by calculating the pose of each game and all data will transfer to per 100 posese.
+The rebound will be subsitute by rebound rate which is independent to other factors like field goal rate but only depends on the ability of rebound.
+
+After reform the data set to do the calculation again
+</p>
+
+```{r}
+games<-aggregate(nba[,c(10,11,13,14,16,17,19:27)],by=list(gameID=nba$GAME_ID,Team =nba$TEAM_ABBREVIATION),FUN=sum)
+games<-mutate(games,year=year(gameID))
+
+games[difcol]<-2*games[col]-total[col]
+games<-mutate(games,TS=round(PTS/(2*(FGA+0.44*FTA)),3))
+games<-mutate(games,FG_PCT=round(FGM/FGA,3))
+games<-mutate(games,FG3_PCT=round(FG3M/FG3A,3))
+games<-mutate(games,FT_PCT=round(FTM/FTA,3))
+games$result <-ifelse(games$PTS>total$PTS/2,1,-1)
+games<- mutate(games,A3P=round(FG3A/FGA,3))
+games<- mutate(games,DREB_P=round(DREB/(DREB+OREB-DifOREB),3))
+games<- mutate(games,OREB_P=round(OREB/(OREB+DREB-DifDREB),3))
+games<-mutate(games,AST_P=round(AST/FGM,3))
+games<-mutate(games,STL_P=round(STL/(FGA+FTA/2+TO)*100,3))
+games<-mutate(games,BLK_P=round(BLK/(FGA+FTA/2+TO)*100,3))
+games<-mutate(games,TO_P=round(TO/(FGA+FTA/2+TO)*100,3))
+selcol <- c('Team','year','FTA','PF','AST_P','DifFG3A','A3P','DREB_P','OREB_P','TO_P','STL_P','BLK_P','result')
+games<-games[selcol]
+
+```
+
+
+```{r}
+set.seed(729375)
+games$rgroup <- runif(dim(games)[[1]])
+TrainAll <- subset(games,rgroup<=0.9)
+Test <- subset(games,rgroup>0.9)
+outcome <- 'result'
+vars <- setdiff(colnames(TrainAll), c(outcome,'rgroup'))
+catVars <- vars[sapply(TrainAll[,vars],class) %in%c('factor','character')]
+numericVars <- vars[sapply(TrainAll[,vars],class) %in%c('numeric','integer')]
+pos <- '1'
+useForCal <- rbinom(n=dim(TrainAll)[[1]],size=1,prob=0.1)>0
+Cal <- subset(TrainAll,useForCal)
+Train <- subset(TrainAll,!useForCal)
+t<-Train
+```
+
+
+```{r}
+for(v in catVars) {
+pi <- paste('pred',v,sep='')
+Train[,pi] <- mkPredC(Train[,outcome],
+Train[,v],Train[,v])
+Cal[,pi] <- mkPredC(Train[,outcome],
+Train[,v],Cal[,v])
+Test[,pi] <- mkPredC(Train[,outcome],
+Train[,v],Test[,v])
+}
+
+for(v in catVars) {
+pi <- paste('pred',v,sep='')
+aucTrain <- calcAUC(Train[,pi],Train[,outcome])
+if(aucTrain>=0.5) {
+aucCal <- calcAUC(Cal[,pi],Cal[,outcome])
+print(sprintf(
+"%s, trainAUC: %4.3f calibrationAUC: %4.3f",
+pi, aucTrain, aucCal))
+}
+}
+
+```
+
+
+```{r}
+for(v in numericVars) {
+pi<-paste('pred',v,sep='')
+Train[,pi]<-mkPredN(Train[,outcome],Train[,v],Train[,v])
+Test[,pi]<-mkPredN(Train[,outcome],Train[,v],Test[,v])
+Cal[,pi]<-mkPredN(Train[,outcome],Train[,v],Cal[,v])
+aucTrain<-calcAUC(Train[,pi],Train[,outcome])
+if(aucTrain>=0.55) {
+aucCal<-calcAUC(Cal[,pi],Cal[,outcome])
+print(sprintf(
+"%s, trainAUC: %4.3f calibrationAUC: %4.3f",
+pi,aucTrain,aucCal))
+}
+}
+train<-Train
+train$result<-t$result
+```
+<br><br>
+<p style="font-family: times, serif; font-size:14pt">
+It is such a surprising found that blocking is the most influential factor of winning a game. Actually, blocking can not take a transition of ball like a steal, it just stop opponent shooting but can not guarantee to take the ball after a blocking. However, it took the lead even surpassing steal and turnovers which can not be simply describe by Statistics. The only explanation of that is blocking can boost morale and reverse the momentum of a game and deter and destroy opponent. So that your team can dominent the game.
+
+Let us plot the Area under ROC curve for blocking
+</p>
+
+```{r}
+library(ROCit)
+plot_roc <- function(predcol, outcol){
+ROCit_obj <- rocit(score=predcol,class=outcol==pos)
+plot(ROCit_obj, col = c(2,4),
+legend = FALSE,YIndex = FALSE, values = FALSE)
+}
+plot_roc(Train$predBLK_P, Train[[outcome]])
+
+```
+<br><br>
+<p style="font-family: times, serif; font-size:14pt">
+With a low block rate a team is less likely to win a game
+</p>
+
+```{r}
+ggplot(data=Cal) +
+geom_density(aes(x=predBLK_P,color=as.factor(result)))
+
+```
+
+<br><br>
+<p style="font-family: times, serif; font-size:14pt">
+100 folds cross-valisation
+This shows that the 100-fold replicated estimate of the AUC has a mean of
+0.576 and a standard deviation of 0.009.
+So the original of the prediction of team which is 0.579 is really good.
+</p>
+
+```{r}
+var <- 'Team'
+aucs <- rep(0,100)
+for(rep in 1:length(aucs)) {
+useForCalRep<-rbinom(n=nrow(TrainAll),size=1,prob=0.1)>0
+predRep<-mkPredC(TrainAll[!useForCalRep,outcome],
+TrainAll[!useForCalRep,var],
+TrainAll[useForCalRep,var])
+aucs[rep]<-calcAUC(predRep,TrainAll[useForCalRep,outcome])
+}
+mean(aucs)
+sd(aucs)
+
+```
+
+<br><br>
+<p style="font-family: times, serif; font-size:14pt">
+Log likelihood is a measure (a non-positive number) of how well the
+model’s predictions “match” the true class labels.
+Compute the likelihood.
+</p>
+```{r}
+logLikelihood <- function(outCol,predCol) {
+sum(ifelse(outCol==pos,log(predCol),log(1-predCol)))
+}
+baseRateCheck <-
+logLikelihood(
+Cal[,outcome],
+sum(Cal[,outcome]==pos)/length(Cal[,outcome])
+)
+baseRateCheck
+
+```
+<br><br>
+<p style="font-family: times, serif; font-size:14pt">
+Run through categorical variables
+</p>
+
+
+```{r}
+selVars <- c()
+minStep <- 5
+for(v in catVars) {
+pi <- paste('pred',v,sep='')
+liCheck <- 2*((logLikelihood(Cal[,outcome],Cal[,pi]) - 1
+- baseRateCheck))
+if(liCheck>minStep) {
+print(sprintf("%s, calibrationScore: %g",pi,liCheck))
+selVars <- c(selVars,pi)
+}
+}
+
+```
+<br><br>
+<p style="font-family: times, serif; font-size:14pt">
+Run through numerical variables
+</p>
+
+
+```{r}
+for(v in numericVars) {
+pi <- paste('pred',v,sep='')
+liCheck <- 2*((logLikelihood(Cal[,outcome],Cal[,pi]) - 1
+- baseRateCheck))
+if(liCheck>=minStep) {
+print(sprintf("%s, calibrationScore: %g", pi,liCheck))
+selVars <- c(selVars,pi)
+}
+}
+
+```
+<br><br>
+<p style="font-family: times, serif; font-size:14pt">
+Decision Tree
+Use Decision Tree to build a model with selected variables
+</p>
+
+```{r}
+fV <- paste(outcome,'>0 ~ ',
+paste(c(catVars,numericVars), collapse=' + '),
+sep='')
+tmodel <- rpart(fV,data=Train)
+print(calcAUC(predict(tmodel,newdata=Train), Train[,outcome]))
+print(calcAUC(predict(tmodel,newdata=Test), Test[,outcome]))
+print(calcAUC(predict(tmodel,newdata=Cal), Cal[,outcome]))
+```
+
+
+```{r}
+tVars <- paste('pred',c(catVars,numericVars),sep='')
+fV2 <- paste(outcome,'>0 ~ ',
+paste(tVars,collapse=' + '),sep='')
+tmodel <- rpart(fV2,data=Train)
+print(calcAUC(predict(tmodel,newdata=Train), Train[,outcome]))
+print(calcAUC(predict(tmodel,newdata=Test), Test[,outcome]))
+print(calcAUC(predict(tmodel,newdata=Cal), Cal[,outcome]))
+```
+<br><br>
+<p style="font-family: times, serif; font-size:14pt">
+It can be seen that the decesion tree in this case is no better than a single variable model for the giving variables
+</p>
+
+
+```{r}
+performanceMeasures <- function(pred, truth, name = "model") {
+dev.norm <-
+-2 * logLikelihood(truth, pred)/length(pred)
+ctable <- table(truth = truth==pos, pred = (pred > 0.5))
+accuracy <- sum(diag(ctable)) / sum(ctable)
+precision <- ctable[2, 2] / sum(ctable[, 2])
+recall <- ctable[2, 2] / sum(ctable[2, ])
+f1 <- 2 * precision * recall / (precision + recall)
+data.frame(model = name, precision = precision,
+recall = recall,
+f1 = f1, dev.norm = dev.norm)
+}
+```
+
+<br><br>
+<p style="font-family: times, serif; font-size:14pt">
+Pander formatting
+</p>
+```{r}
+panderOpt <- function(){
+library(pander)
+# setting up Pander Options
+panderOptions("plain.ascii", TRUE)
+panderOptions("keep.trailing.zeros", TRUE)
+panderOptions("table.style", "simple")
+}
+```
+
+<br><br>
+<p style="font-family: times, serif; font-size:14pt">
+Prettier Performance Table Function
+</p>
+
+```{r}
+pretty_perf_table <- function(model,training,test){
+# Option setting for Pander
+panderOpt()
+perf_justify <- "lrrrr"
+# comparing performance on training vs. test
+pred_train<-predict(model,newdata=training)
+truth_train <- training[,outcome]
+pred_test<-predict(model,newdata=test)
+truth_test <- test[,outcome]
+trainperf_tree <- performanceMeasures(
+pred_train,truth_train,"training")
+testperf_tree <- performanceMeasures(
+pred_test,truth_test, "test")
+perftable <- rbind(trainperf_tree, testperf_tree)
+pandoc.table(perftable, justify = perf_justify)
+}
+```
+<br><br>
+Pretty Print of a performance table
+</p>
+
+```{r}
+pretty_perf_table(tmodel, Train, Test)
+
+```
+<br><br>
+It can be seen that the model has similar result for both training and test data set. However, the precesion and recall rate are generally low.
+
+Let us plot the AUC for both traning and test data
+</p>
+
+
+```{r}
+library(ROCit)
+plot_roc <- function(predcol1, outcol1, predcol2, outcol2){
+roc_1 <- rocit(score=predcol1,class=outcol1==pos)
+roc_2 <- rocit(score=predcol2,class=outcol2==pos)
+plot(roc_1, col = c("blue","green"), lwd = 3,
+legend = FALSE,YIndex = FALSE, values = TRUE)
+lines(roc_2$TPR ~ roc_2$FPR, lwd = 1,
+col = c("red","green"))
+legend("bottomright", col = c("blue","red", "green"),
+c("Test Data", "Training Data", "Null Model"), lwd = 2)
+}
+pred_test_roc<-predict(tmodel,newdata=Test)
+pred_train_roc<-predict(tmodel,newdata=Train)
+
+plot_roc(pred_test_roc, Test[[outcome]],
+pred_train_roc, Train[[outcome]])
+```
+
+```{r}
+tmodel <- rpart(fV2,data=Train,
+control=rpart.control(cp=0.001,minsplit=1000,
+minbucket=1000,maxdepth=5))
+print(calcAUC(predict(tmodel,newdata=Train), Train[,outcome]))
+print(calcAUC(predict(tmodel,newdata=Test), Test[,outcome]))
+print(calcAUC(predict(tmodel,newdata=Cal), Cal[,outcome]))
+pretty_perf_table(tmodel, Train, Test)
+```
+<br><br>
+Print out the structure of the decision tree
+</p>
+
+```{r}
+print(tmodel)
+```
+
+```{r}
+par(cex=0.7)
+rpart.plot(tmodel)
+```
+<br><br>
+Logistic Regression
+Build a model with logistic regrssion. Then the AUC has been improved by 10% which is much more higher than a single varialbe model
+</p>
+```{r}
+f <- paste(outcome,'>0 ~ ',paste(selVars,collapse=' + '),sep='')
+gmodel <- glm(as.formula(f),data=Train,
+family=binomial(link='logit'))
+print(calcAUC(predict(gmodel,newdata=Train),Train[,outcome]))
+print(calcAUC(predict(gmodel,newdata=Test),Test[,outcome]))
+print(calcAUC(predict(gmodel,newdata=Cal),Cal[,outcome]))
+
+```
+<br><br>
+Picking the threshold for classification
+</p>
+
+```{r}
+
+train$pred <- predict(gmodel, newdata=train, type="response")
+Test$pred <- predict(gmodel, newdata=Test, type="response")
+
+predObj <- prediction(train$pred, train$result)
+precObj <- performance(predObj, measure="prec")
+recObj <- performance(predObj, measure="rec")
+precision <- (precObj@y.values)[[1]]
+prec.x <- (precObj@x.values)[[1]]
+recall <- (recObj@y.values)[[1]]
+rocFrame <- data.frame(threshold=prec.x,
+precision=precision,
+recall=recall)
+pnull <-mean(as.numeric(train$result))
+```
+<br><br>
+Building the plots
+</p>
+```{r}
+p1 <- ggplot(rocFrame, aes(x=threshold)) +
+geom_line(aes(y=precision/pnull)) +
+coord_cartesian()
+p2 <- ggplot(rocFrame, aes(x=threshold)) +
+geom_line(aes(y=recall)) +
+coord_cartesian()
+library(gridExtra)
+grid.arrange(p1,p2, nrow = 2)
+```
+<br><br>
+The treshold are set to be 0.5 and the precesion is 67.9% and the recal is 66.4% and the enrichment rate is 391 
+
+This gives a much better predcition than that of a single a variable and decision tree
+</p>
+
+
+```{r}
+ctab.test <- table(pred=Test$pred>0.5, result=Test$result)
+ctab.test
+
+```
+```{r}
+precision <- ctab.test[2,2]/sum(ctab.test[2,])
+recall <- ctab.test[2,2]/sum(ctab.test[,2])
+enrich <- precision/mean(as.numeric(Test$result))
+precision
+recall
+enrich
+```
+<br><br>
+Building the plots of ROC curve
+</p>
+
+```{r}
+library(ROCit)
+plot_roc <- function(predcol1, outcol1, outcol2){
+roc_1 <- rocit(score=predcol1,class=outcol1==pos)
+
+plot(roc_1, col = c("blue","green"), lwd = 3,
+legend = FALSE,YIndex = FALSE, values = TRUE)
+
+
+
+
+legend("bottomright", col = c("blue", "green"),
+c("logistic", "Null Model"), lwd = 2)
+}
+
+```
+
+
+```{r}
+pred_gmodel_roc<-predict(gmodel,newdata=Test)
+plot_roc(pred_gmodel_roc, Test[[outcome]], Test[[outcome]])
+
+
+```
+
+<p style="font-family: times, serif; font-size:18pt">
+    Cluster
+</p>
+<br><br>
+This part is aim to get the best player seasons with score above 26 and make them into different groups to see the differece of those top players
+
+Firstly, the data will be transformed into the format I want.
+</p>
+
+```{r}
+players<-aggregate(nba[,c(10,11,13,14,16,17,19:27)],by=list(Players=nba$PLAYER_NAME,Year =nba$year),FUN=mean)
+players<-mutate(players,TS=round(PTS*100/(2*(FGA+0.44*FTA)),3))
+players<-players[which(players$PTS>26),]
+players$Players<- paste(players$Players,players$Year,sep='-')
+players<-players[,-2:-4]
+players<-players[,-4:-5]
+players$FG3P<-100*players$FG3M/players$FG3A
+players <- na.omit(players)
+
+```
+<br><br>
+Plot the result of clustering
+</p>
+
+
+```{r}
+vars.to.use <- colnames(players)[-1]
+pmatrix <- scale(players[,vars.to.use])
+pcenter <- attr(pmatrix, "scaled:center")
+pscale <- attr(pmatrix, "scaled:scale")
+d <- dist(pmatrix, method="euclidean")
+pfit <- hclust(d, method="ward.D2")
+plot(pfit, labels=players$Players,cex=0.6)
+rect.hclust(pfit, k=4) 
+```
+
+<br><br>
+Define a function to print out the sorted groups
+</p>
+
+
+```{r}
+groups <- cutree(pfit, k=4)
+print_clusters <- function(labels, k) {
+for(i in 1:k) {
+print(paste("cluster", i))
+print(players[labels==i,
+c("Players","FG3M","FG3P","TS","PTS","REB","AST")])
+}
+}
+print_clusters(groups, 2)
+
+```
+<br><br>
+Plot the result of clustering
+</p>
+
+```{r}
+library(ggplot2)
+# Calculate the principle components of pmatrix
+princ <- prcomp(pmatrix)
+nComp <- 2
+project <- as.data.frame(predict(princ, newdata=pmatrix)[,1:nComp])
+project.plus <-
+cbind(project,
+cluster=as.factor(groups),
+country=players$Players)
+```
+<br><br>
+finding convex hull
+</p>
+```{r}
+library('grDevices')
+h <- do.call(
+rbind,
+lapply(
+unique(groups),
+function(c) {
+f <- subset(project.plus,cluster==c);
+f[chull(f),]
+}
+)
+)
+```
+<br><br>
+Visualising Cluster
+</p>
+
+```{r}
+p <- ggplot(project.plus, aes(x=PC1, y=PC2)) +
+geom_point(aes(shape=cluster, color=cluster)) +
+geom_text(aes(label=country, color=cluster),
+hjust=0, vjust=1, size=3) +
+geom_polygon(data=h,
+aes(group=cluster,
+fill=as.factor(cluster)),
+alpha=0.4,linetype=0)
+p
+```
+
+
+```{r}
+library(fpc)
+kbest.p <- 4
+cboot.hclust <- clusterboot(
+pmatrix, clustermethod=hclustCBI,
+method="ward.D2", k=kbest.p)
+
+```
+<br><br>
+Summary of clusterboot result
+</p>
+```{r}
+summary(cboot.hclust$result)
+groups <- cboot.hclust$result$partition
+print_clusters(groups, 4)
+
+```
+<br><br>
+count of how many times each cluster was dissolved
+So the group 4 has the highest table and group 1 and 3 is OK, but the group 2 is the lowest which is unstable.
+</p>
+```{r}
+1-cboot.hclust$bootbrd/100
+```
+<br><br>
+Selecting K
+</p>
+```{r}
+sqr_edist <- function(x, y) {
+sum((x-y)^2)
+}
+
+wss.cluster <- function(clustermat) {
+c0 <- apply(clustermat, 2, FUN=mean)
+sum(apply(clustermat, 1,
+FUN=function(row){sqr_edist(row,c0)}))
+}
+
+
+wss.total <- function(dmatrix, labels) {
+wsstot <- 0
+k <- length(unique(labels))
+for(i in 1:k){
+wsstot <- wsstot +
+wss.cluster(subset(dmatrix, labels==i))
+}
+wsstot
+}
+
+```
+
+```{r}
+totss <- function(dmatrix) {
+grandmean <- apply(dmatrix, 2, FUN=mean)
+sum(apply(dmatrix, 1,
+FUN=function(row){
+sqr_edist(row, grandmean)
+}
+)
+)
+}
+
+```
+```{r}
+ch_criterion <- function(dmatrix, kmax, method="kmeans") {
+if(!(method %in% c("kmeans", "hclust"))){
+stop("method must be one of c('kmeans', 'hclust')")
+}
+npts <- dim(dmatrix)[1] # number of rows.
+totss <- totss(dmatrix)
+wss <- numeric(kmax)
+crit <- numeric(kmax)
+wss[1] <- (npts-1)*sum(apply(dmatrix, 2, mean))
+for(k in 2:kmax) {
+if(method=="kmeans") {
+clustering<-kmeans(dmatrix, k, nstart=10, iter.max=100)
+wss[k] <- clustering$tot.withinss
+}else { # hclust
+d <- dist(dmatrix, method="euclidean")
+pfit <- hclust(d, method="ward.D2")
+labels <- cutree(pfit, k=k)
+wss[k] <- wss.total(dmatrix, labels)
+}
+}
+bss <- totss - wss
+crit.num <- bss/(0:(kmax-1))
+crit.denom <- wss/(npts - 1:kmax)
+list(crit = crit.num/crit.denom, wss = wss, totss = totss)
+}
+```
+
+<br><br>
+Code to plot the indicies WSS
+K= 3 would be a good option in this case to make the cluster clear and unsovled
+</p>
+ 
+```{r}
+library(reshape2)
+clustcrit <- ch_criterion(pmatrix, 10, method="hclust")
+critframe <- data.frame(k=1:10, ch=scale(clustcrit$crit),
+wss=scale(clustcrit$wss))
+critframe <- melt(critframe, id.vars=c("k"),
+variable.name="measure",
+value.name="score")
+p<-ggplot(critframe, aes(x=k, y=score)) +
+geom_point()
+p
+```
+ 
+ 
+ 
+ 
